@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CesiumJS: Fighter Jet Flight Sim (Nose Direction)</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.103/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.103/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body, #cesiumContainer {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    <script>
+        // Set your Cesium Ion access token
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5ZjM5NDgwZi04NmFhLTQ0ZmUtOTVmMC00NzEyNWRlYTczZGMiLCJpZCI6MjYzNDIyLCJpYXQiOjE3MzQ1NDE2NjZ9.n4QU-yEnla-yvYm9ZyCnewFwHebwFOvPF_ElrW1ANOQ'; // Replace with your Cesium Ion access token
+
+        // Initialize Cesium Viewer
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            terrainProvider: Cesium.createWorldTerrain(), // Load global terrain
+            animation: false,
+            timeline: false,
+            sceneModePicker: false
+        });
+
+        // Enable depth testing against terrain
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+
+        // Add the 3D model
+        const modelPosition = Cesium.Cartesian3.fromDegrees(-123.0744619, 44.0503706, 300);
+        const modelEntity = viewer.entities.add({
+            name: "Fighter Jet",
+            position: modelPosition,
+            orientation: Cesium.Transforms.headingPitchRollQuaternion(
+                modelPosition,
+                new Cesium.HeadingPitchRoll(0, 0, 0)
+            ),
+            model: {
+                uri: 'fighter1.glb',
+                minimumPixelSize: 64,
+                maximumScale: 200
+            }
+        });
+
+        // Initialize pitch, roll, heading, and position
+        let pitch = 0; // Pitch in radians
+        let roll = 0;  // Roll in radians
+        let heading = 0; // Heading in radians
+        let position = Cesium.Cartesian3.clone(modelPosition);
+
+        // Movement parameters
+        const forwardSpeed = 10; // Forward movement in meters per tick
+        const rotationStep = Cesium.Math.toRadians(1); // Rotation step in radians
+
+        // Track whether the camera is in "follow mode"
+        let isCameraFollowing = true;
+
+        // Function to calculate the forward direction vector based on heading, pitch, and roll
+        function getForwardVector(heading, pitch, roll) {
+            const matrix = Cesium.Transforms.headingPitchRollToFixedFrame(
+                position,
+                new Cesium.HeadingPitchRoll(heading, pitch, roll)
+            );
+            const forward = Cesium.Matrix4.multiplyByPointAsVector(
+                matrix,
+                new Cesium.Cartesian3(0, 1, 0), // Forward direction in local space
+                new Cesium.Cartesian3()
+            );
+            return Cesium.Cartesian3.normalize(forward, new Cesium.Cartesian3());
+        }
+
+        // Function to update the model's position and orientation
+        function updateModel() {
+            // Update orientation based on pitch, roll, and heading
+            const hpr = new Cesium.HeadingPitchRoll(heading, pitch, roll);
+            modelEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
+                modelEntity.position.getValue(Cesium.JulianDate.now()),
+                hpr
+            );
+
+            // Update position
+            modelEntity.position = position;
+
+            // If the camera is in follow mode, update its position
+            if (isCameraFollowing) {
+                viewer.camera.lookAt(position, new Cesium.Cartesian3(0, 0, 50)); // Zoomed-in view
+            }
+        }
+
+        // Listen to keyboard inputs for movement and orientation control
+        document.addEventListener('keydown', (event) => {
+            switch (event.key) {
+                case 'w': // Move forward in the direction the nose is pointing
+                    const forwardVector = getForwardVector(heading, pitch, roll);
+                    const scaledForward = Cesium.Cartesian3.multiplyByScalar(
+                        forwardVector,
+                        forwardSpeed,
+                        new Cesium.Cartesian3()
+                    );
+                    position = Cesium.Cartesian3.add(position, scaledForward, new Cesium.Cartesian3());
+                    break;
+                case 'ArrowUp': // Pitch up
+                    pitch -= rotationStep;
+                    break;
+                case 'ArrowDown': // Pitch down
+                    pitch += rotationStep;
+                    break;
+                case 'ArrowLeft': // Yaw left (change heading)
+                    heading -= rotationStep;
+                    break;
+                case 'ArrowRight': // Yaw right (change heading)
+                    heading += rotationStep;
+                    break;
+                case 'a': // Roll left
+                    roll -= rotationStep;
+                    break;
+                case 'd': // Roll right
+                    roll += rotationStep;
+                    break;
+                case 'f': // Toggle follow mode
+                    isCameraFollowing = !isCameraFollowing;
+                    break;
+                default:
+                    return; // Ignore other keys
+            }
+            updateModel();
+        });
+
+        // Move the camera to focus on the model at startup
+        viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(-123.0744619, 44.0503706, 500),
+            orientation: {
+                heading: Cesium.Math.toRadians(0),
+                pitch: Cesium.Math.toRadians(-30),
+                roll: 0
+            }
+        });
+
+        // Enable full orbit controls
+        const scene = viewer.scene;
+        const cameraController = scene.screenSpaceCameraController;
+
+        // Allow looking straight up and down
+        cameraController.maximumPitch = Cesium.Math.toRadians(90);
+        cameraController.minimumPitch = Cesium.Math.toRadians(-90);
+
+        // Remove restrictions on zoom levels
+        cameraController.minimumZoomDistance = 1.0;
+        cameraController.maximumZoomDistance = Number.MAX_VALUE;
+
+        // Remove other restrictions for free camera control
+        cameraController.enableLook = true; // Allow free look around
+    </script>
+</body>
+</html>
